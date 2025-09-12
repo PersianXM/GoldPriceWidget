@@ -111,6 +111,70 @@ MOON_ICON_SVG = """
 </svg>
 """.encode('utf-8')
 
+# Tether (USDT) Icon - Official Symbol
+TETHER_ICON_SVG = """
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+<defs>
+    <linearGradient id="tether-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" style="stop-color:#50AF95;stop-opacity:1"/>
+        <stop offset="100%" style="stop-color:#26A69A;stop-opacity:1"/>
+    </linearGradient>
+</defs>
+<circle cx="12" cy="12" r="10" fill="url(#tether-gradient)" stroke="#1B5E20" stroke-width="1"/>
+<text x="12" y="16" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="12" font-weight="bold">₮</text>
+</svg>
+""".encode('utf-8')
+
+# Bitcoin Icon
+BITCOIN_ICON_SVG = """
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+<defs>
+    <linearGradient id="bitcoin-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" style="stop-color:#F7931A;stop-opacity:1"/>
+        <stop offset="100%" style="stop-color:#E65100;stop-opacity:1"/>
+    </linearGradient>
+</defs>
+<circle cx="12" cy="12" r="10" fill="url(#bitcoin-gradient)" stroke="#BF360C" stroke-width="1.5"/>
+<text x="12" y="16" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="12" font-weight="bold">₿</text>
+</svg>
+""".encode('utf-8')
+
+# Ethereum Icon
+ETHEREUM_ICON_SVG = """
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+<defs>
+    <linearGradient id="eth-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" style="stop-color:#627EEA;stop-opacity:1"/>
+        <stop offset="100%" style="stop-color:#454A75;stop-opacity:1"/>
+    </linearGradient>
+</defs>
+<!-- Ethereum diamond symbol -->
+<path d="M12 2L18 8L18 16L12 22L6 16L6 8Z" fill="url(#eth-gradient)" stroke="#454A75" stroke-width="1"/>
+<path d="M12 2L18 8L12 12L6 8Z" fill="#FFFFFF" opacity="0.8"/>
+<path d="M12 22L18 16L12 12L6 16Z" fill="#FFFFFF" opacity="0.6"/>
+</svg>
+""".encode('utf-8')
+
+# USD Icon (Dollar Bill)
+USD_ICON_SVG = """
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+<defs>
+    <linearGradient id="usd-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" style="stop-color:#4CAF50;stop-opacity:1"/>
+        <stop offset="100%" style="stop-color:#2E7D32;stop-opacity:1"/>
+    </linearGradient>
+</defs>
+<!-- Dollar bill shape -->
+<rect x="3" y="6" width="18" height="12" rx="1" ry="1" fill="url(#usd-gradient)" stroke="#1B5E20" stroke-width="1"/>
+<!-- Dollar sign -->
+<text x="12" y="15" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="10" font-weight="bold">$</text>
+<!-- Bill lines -->
+<line x1="5" y1="9" x2="19" y2="9" stroke="white" stroke-width="0.5" opacity="0.7"/>
+<line x1="5" y1="11" x2="19" y2="11" stroke="white" stroke-width="0.5" opacity="0.7"/>
+<line x1="5" y1="13" x2="19" y2="13" stroke="white" stroke-width="0.5" opacity="0.7"/>
+</svg>
+""".encode('utf-8')
+
 # Default weather icon (sun)
 WEATHER_ICON_SVG = SUN_ICON_SVG
 
@@ -262,12 +326,22 @@ class PriceUpdater(QThread):
     def __init__(self):
         super().__init__()
         self.brs_api_url = "https://BrsApi.ir/Api/Market/Gold_Currency.php?key=B9PS4EgxiEgrngmuNdKa1xdgJybsp8Zi"
+        # Using BRS API for cryptocurrency data as requested
+        self.crypto_api_url = "https://BrsApi.ir/Api/Market/Cryptocurrency.php?key=B9PS4EgxiEgrngmuNdKa1xdgJybsp8Zi"
 
     def run(self):
         while True:
             try:
-                # Fetch prices from API
-                prices = self._fetch_from_api()
+                # Fetch prices from both APIs
+                gold_prices = self._fetch_from_api()
+                crypto_prices = self._fetch_crypto_from_api()
+
+                # Combine prices
+                prices = {}
+                if gold_prices:
+                    prices.update(gold_prices)
+                if crypto_prices:
+                    prices.update(crypto_prices)
 
                 if prices:
                     print(f"Fetched prices: {prices}")
@@ -328,6 +402,46 @@ class PriceUpdater(QThread):
             print(f"BRS API (urllib) error: {str(e)}")
             return None
 
+    def _fetch_crypto_from_api(self):
+        """Fetch cryptocurrency prices from BRS API"""
+        try:
+            # Try with requests first
+            import requests
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            response = requests.get(self.crypto_api_url, headers=headers, timeout=10, verify=False)
+            if response.status_code == 200:
+                return self._parse_crypto_api_response(response.json())
+        except Exception as e:
+            print(f"Crypto API (requests) error: {str(e)}")
+
+        # Fallback to urllib if requests fails
+        try:
+            import urllib.request
+            import json
+            import ssl
+
+            # Create SSL context that doesn't verify certificates
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+
+            req = urllib.request.Request(self.crypto_api_url, headers=headers)
+            with urllib.request.urlopen(req, context=ssl_context, timeout=10) as response:
+                data = json.loads(response.read().decode('utf-8'))
+                return self._parse_crypto_api_response(data)
+        except Exception as e:
+            print(f"Crypto API (urllib) error: {str(e)}")
+            return None
+
     def _parse_api_response(self, data):
         """Parse the JSON data"""
         prices = {}
@@ -347,13 +461,127 @@ class PriceUpdater(QThread):
                         elif symbol == "IR_COIN_EMAMI":
                             prices["سکه امامی"] = str(price)
 
+            # Parse currency section
+            if "currency" in data and isinstance(data["currency"], list):
+                for item in data["currency"]:
+                    if isinstance(item, dict):
+                        symbol = item.get("symbol", "")
+                        name = item.get("name", "")
+                        price = item.get("price", "")
+
+                        # USD as base exchange rate
+                        if symbol == "USD":
+                            prices["دلار"] = str(price)
+                            prices["usd_to_irr"] = str(price)
+                            print(f"Found USD price: {price}")
+
+                        # Tether in IRR (USDT_IRT)
+                        elif symbol == "USDT_IRT":
+                            prices["تتر"] = str(price)
+                            print(f"Found Tether (IRR): {price}")
+
+        return prices if prices else None
+
+    def _parse_crypto_api_response(self, data):
+        """Parse the cryptocurrency JSON data from BRS API"""
+        prices = {}
+
+        print(f"Crypto JSON Data: {data}")  # Debug: print the full response
+
+        if isinstance(data, dict):
+            # Handle BRS API response structure: {"cryptocurrency": [...]}
+            if "cryptocurrency" in data and isinstance(data["cryptocurrency"], list):
+                print("Found cryptocurrency data in BRS format")
+                for item in data["cryptocurrency"]:
+                    if isinstance(item, dict):
+                        symbol = item.get("symbol", "")
+                        name = item.get("name", "")
+                        price = item.get("price", "")
+
+                        print(f"Crypto item: symbol={symbol}, name={name}, price={price}")
+
+                        # Check for different cryptocurrencies
+                        if symbol == "USDT" or name == "تتر" or name == "Tether":
+                            if price:
+                                prices["تتر"] = str(price)
+                                print(f"Found Tether price from BRS: {price}")
+                        elif symbol == "BTC" or name == "بیت‌کوین" or name == "Bitcoin":
+                            if price:
+                                prices["بیت‌کوین"] = str(price)
+                                print(f"Found Bitcoin price from BRS: {price}")
+                        elif symbol == "ETH" or name == "اتریوم" or name == "Ethereum":
+                            if price:
+                                prices["اتریوم"] = str(price)
+                                print(f"Found Ethereum price from BRS: {price}")
+
+            # Fallback: Check for other possible structures
+            else:
+                possible_keys = ["crypto", "data", "result", "coins", "assets"]
+
+                for key in possible_keys:
+                    if key in data and isinstance(data[key], list):
+                        print(f"Found crypto data in key: {key}")
+                        for item in data[key]:
+                            if isinstance(item, dict):
+                                symbol = item.get("symbol", item.get("Symbol", ""))
+                                name = item.get("name", item.get("Name", ""))
+                                price = item.get("price", item.get("Price", ""))
+
+                                print(f"Crypto item from {key}: symbol={symbol}, name={name}, price={price}")
+
+                                if (symbol and ("USDT" in symbol.upper() or "TETHER" in symbol.upper())) or \
+                                   (name and ("تتر" in name or "TETHER" in name.upper() or "USDT" in name.upper())):
+                                    if price:
+                                        prices["تتر"] = str(price)
+                                        print(f"Found Tether price: {price}")
+                                elif (symbol and "BTC" in symbol.upper()) or \
+                                     (name and ("بیت‌کوین" in name or "BITCOIN" in name.upper())):
+                                    if price:
+                                        prices["بیت‌کوین"] = str(price)
+                                        print(f"Found Bitcoin price: {price}")
+                                elif (symbol and "ETH" in symbol.upper()) or \
+                                     (name and ("اتریوم" in name or "ETHEREUM" in name.upper())):
+                                    if price:
+                                        prices["اتریوم"] = str(price)
+                                        print(f"Found Ethereum price: {price}")
+                                        break
+
+        elif isinstance(data, list):
+            # If the entire response is a list of cryptocurrencies
+            print("Crypto data is a direct list")
+            for item in data:
+                if isinstance(item, dict):
+                    symbol = item.get("symbol", item.get("Symbol", ""))
+                    name = item.get("name", item.get("Name", ""))
+                    price = item.get("price", item.get("Price", ""))
+
+                    print(f"Direct list crypto item: symbol={symbol}, name={name}, price={price}")
+
+                    if (symbol and ("USDT" in symbol.upper() or "TETHER" in symbol.upper())) or \
+                       (name and ("تتر" in name or "TETHER" in name.upper() or "USDT" in name.upper())):
+                        if price:
+                            prices["تتر"] = str(price)
+                            print(f"Found Tether price: {price}")
+                    elif (symbol and "BTC" in symbol.upper()) or \
+                         (name and ("بیت‌کوین" in name or "BITCOIN" in name.upper())):
+                        if price:
+                            prices["بیت‌کوین"] = str(price)
+                            print(f"Found Bitcoin price: {price}")
+                    elif (symbol and "ETH" in symbol.upper()) or \
+                         (name and ("اتریوم" in name or "ETHEREUM" in name.upper())):
+                        if price:
+                            prices["اتریوم"] = str(price)
+                            print(f"Found Ethereum price: {price}")
+                            break
+
+        print(f"Final crypto prices: {prices}")
         return prices if prices else None
 
 class GlassWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("نرخ طلا و سکه")
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         
         self.display_mode = 'gold'  
@@ -390,19 +618,19 @@ class GlassWindow(QWidget):
             custom_font = QFont("Arial", 14)
 
         # --- مجموعه ویجت‌های طلا ---
-        self.gold_price_label = QLabel("...")
+        self.gold_price_label = QLabel("۲,۵۰۰,۰۰۰")
         self.gold_price_label.setFont(custom_font)
         self.gold_price_label.setStyleSheet("color: white; background-color: transparent;")
-        
+
         self.gold_icon_label = QLabel()
         self.gold_icon_label.setPixmap(self._render_svg_to_pixmap(GOLD_ICON_SVG))
         self.gold_icon_label.setStyleSheet("background-color: transparent;")
 
         # --- مجموعه ویجت‌های سکه ---
-        self.coin_price_label = QLabel("...")
+        self.coin_price_label = QLabel("۱۴,۸۰۰,۰۰۰")
         self.coin_price_label.setFont(custom_font)
         self.coin_price_label.setStyleSheet("color: white; background-color: transparent;")
-        
+
         self.coin_icon_label = QLabel()
         self.coin_icon_label.setPixmap(self._render_svg_to_pixmap(COIN_ICON_SVG))
         self.coin_icon_label.setStyleSheet("background-color: transparent;")
@@ -411,7 +639,7 @@ class GlassWindow(QWidget):
         self.system_price_label = QLabel(self._get_system_name())
         self.system_price_label.setFont(custom_font)
         self.system_price_label.setStyleSheet("color: white; background-color: transparent;")
-        
+
         self.system_icon_label = QLabel()
         self.system_icon_label.setPixmap(self._render_svg_to_pixmap(SYSTEM_ICON_SVG))
         self.system_icon_label.setStyleSheet("background-color: transparent;")
@@ -426,13 +654,49 @@ class GlassWindow(QWidget):
         self.ip_icon_label.setStyleSheet("background-color: transparent;")
 
         # --- مجموعه ویجت‌های Weather ---
-        self.weather_label = QLabel("در حال بارگذاری...")
+        self.weather_label = QLabel("۴۴°C")
         self.weather_label.setFont(custom_font)
         self.weather_label.setStyleSheet("color: white; background-color: transparent;")
 
         self.weather_icon_label = QLabel()
-        self.weather_icon_label.setPixmap(self._render_svg_to_pixmap(WEATHER_ICON_SVG))
+        self.weather_icon_label.setPixmap(self._render_svg_to_pixmap(SUN_ICON_SVG))
         self.weather_icon_label.setStyleSheet("background-color: transparent;")
+
+        # --- مجموعه ویجت‌های Tether ---
+        self.tether_price_label = QLabel("۵۰,۰۰۰")
+        self.tether_price_label.setFont(custom_font)
+        self.tether_price_label.setStyleSheet("color: white; background-color: transparent;")
+
+        self.tether_icon_label = QLabel()
+        self.tether_icon_label.setPixmap(self._render_svg_to_pixmap(TETHER_ICON_SVG))
+        self.tether_icon_label.setStyleSheet("background-color: transparent;")
+
+        # --- مجموعه ویجت‌های USD ---
+        self.usd_price_label = QLabel("۴۹,۵۰۰")
+        self.usd_price_label.setFont(custom_font)
+        self.usd_price_label.setStyleSheet("color: white; background-color: transparent;")
+
+        self.usd_icon_label = QLabel()
+        self.usd_icon_label.setPixmap(self._render_svg_to_pixmap(USD_ICON_SVG))
+        self.usd_icon_label.setStyleSheet("background-color: transparent;")
+
+        # --- مجموعه ویجت‌های Bitcoin ---
+        self.btc_price_label = QLabel("۱,۲۵۰,۰۰۰")
+        self.btc_price_label.setFont(custom_font)
+        self.btc_price_label.setStyleSheet("color: white; background-color: transparent;")
+
+        self.btc_icon_label = QLabel()
+        self.btc_icon_label.setPixmap(self._render_svg_to_pixmap(BITCOIN_ICON_SVG))
+        self.btc_icon_label.setStyleSheet("background-color: transparent;")
+
+        # --- مجموعه ویجت‌های Ethereum ---
+        self.eth_price_label = QLabel("۲۵۰,۰۰۰")
+        self.eth_price_label.setFont(custom_font)
+        self.eth_price_label.setStyleSheet("color: white; background-color: transparent;")
+
+        self.eth_icon_label = QLabel()
+        self.eth_icon_label.setPixmap(self._render_svg_to_pixmap(ETHEREUM_ICON_SVG))
+        self.eth_icon_label.setStyleSheet("background-color: transparent;")
 
         # --- ساخت ویجت‌های مجزا برای طلا و سکه و system ---
         gold_container = QWidget()
@@ -482,13 +746,57 @@ class GlassWindow(QWidget):
         weather_layout.addWidget(self.weather_label)
         weather_layout.addStretch()
 
+        # --- کانتینر Tether ---
+        tether_container = QWidget()
+        tether_layout = QHBoxLayout(tether_container)
+        tether_layout.setContentsMargins(20, 8, 20, 8)
+        tether_layout.setSpacing(10)
+        tether_layout.addStretch()
+        tether_layout.addWidget(self.tether_icon_label)
+        tether_layout.addWidget(self.tether_price_label)
+        tether_layout.addStretch()
+
+        # --- کانتینر USD ---
+        usd_container = QWidget()
+        usd_layout = QHBoxLayout(usd_container)
+        usd_layout.setContentsMargins(20, 8, 20, 8)
+        usd_layout.setSpacing(10)
+        usd_layout.addStretch()
+        usd_layout.addWidget(self.usd_icon_label)
+        usd_layout.addWidget(self.usd_price_label)
+        usd_layout.addStretch()
+
+        # --- کانتینر Bitcoin ---
+        btc_container = QWidget()
+        btc_layout = QHBoxLayout(btc_container)
+        btc_layout.setContentsMargins(20, 8, 20, 8)
+        btc_layout.setSpacing(10)
+        btc_layout.addStretch()
+        btc_layout.addWidget(self.btc_icon_label)
+        btc_layout.addWidget(self.btc_price_label)
+        btc_layout.addStretch()
+
+        # --- کانتینر Ethereum ---
+        eth_container = QWidget()
+        eth_layout = QHBoxLayout(eth_container)
+        eth_layout.setContentsMargins(20, 8, 20, 8)
+        eth_layout.setSpacing(10)
+        eth_layout.addStretch()
+        eth_layout.addWidget(self.eth_icon_label)
+        eth_layout.addWidget(self.eth_price_label)
+        eth_layout.addStretch()
+
         # --- ساخت استک ویجت برای جابجایی بین حالت‌ها ---
         self.stack = QStackedWidget()
-        self.stack.addWidget(coin_container)      # ایندکس 0
-        self.stack.addWidget(gold_container)      # ایندکس 1
-        self.stack.addWidget(system_container)    # ایندکس 2
-        self.stack.addWidget(ip_container)        # ایندکس 3
-        self.stack.addWidget(weather_container)   # ایندکس 4
+        self.stack.addWidget(ip_container)         # ایندکس 0 - IP
+        self.stack.addWidget(system_container)     # ایندکس 1 - System Name
+        self.stack.addWidget(weather_container)    # ایندکس 2 - Weather
+        self.stack.addWidget(usd_container)        # ایندکس 3 - USD به تومان
+        self.stack.addWidget(tether_container)     # ایندکس 4 - USDT_IRT به تومان
+        self.stack.addWidget(btc_container)        # ایندکس 5 - BTC
+        self.stack.addWidget(eth_container)        # ایندکس 6 - ETH
+        self.stack.addWidget(coin_container)       # ایندکس 7 - سکه امامی
+        self.stack.addWidget(gold_container)       # ایندکس 8 - طلای عیار 18
 
         # --- چیدمان اصلی ---
         content_layout = QHBoxLayout(container_widget)
@@ -496,8 +804,8 @@ class GlassWindow(QWidget):
         content_layout.addWidget(self.stack)
 
         # --- تنظیم حالت اولیه ---
-        self.stack.setCurrentIndex(0)  # نمایش سکه
-        self.display_mode = 'coin'
+        self.stack.setCurrentIndex(0)  # نمایش IP
+        self.display_mode = 'ip'
 
         # --- سایه و چیدمان اصلی ---
         shadow = QGraphicsDropShadowEffect()
@@ -520,6 +828,10 @@ class GlassWindow(QWidget):
         self.weather_updater.weather_updated.connect(self._update_weather_display)
         self.weather_updater.start()
         
+        # Ensure window is visible and on top
+        self.show()
+        self.raise_()
+        self.activateWindow()
         self.move_to_top_right()
 
     def _render_svg_to_pixmap(self, svg_data, size=QSize(22, 22)):
@@ -556,25 +868,51 @@ class GlassWindow(QWidget):
             return "Unknown IP"
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            current_index = self.stack.currentIndex()
-            # چرخش بین پنج حالت
-            next_index = (current_index + 1) % 5
-            self.stack.setCurrentIndex(next_index)
-            self.display_mode = ['coin', 'gold', 'system', 'ip', 'weather'][next_index]
-        elif event.button() == Qt.MouseButton.RightButton:
+        if event.button() == Qt.MouseButton.RightButton:
+            # کلیک راست: بستن برنامه
             self.close()
+        elif event.button() == Qt.MouseButton.LeftButton:
+            # تعیین محل کلیک بر اساس مختصات X
+            click_x = event.position().x()
+            widget_width = self.width()
+
+            if click_x > widget_width / 2:
+                # کلیک بر روی سمت راست (قیمت): نمایش اطلاعات بعدی (Next)
+                current_index = self.stack.currentIndex()
+                next_index = (current_index + 1) % 9
+                self.stack.setCurrentIndex(next_index)
+                self.display_mode = ['ip', 'system', 'weather', 'usd', 'tether', 'btc', 'eth', 'coin', 'gold'][next_index]
+            else:
+                # کلیک بر روی سمت چپ (آیکون): نمایش اطلاعات قبلی (Previous)
+                current_index = self.stack.currentIndex()
+                previous_index = (current_index - 1) % 9
+                self.stack.setCurrentIndex(previous_index)
+                self.display_mode = ['ip', 'system', 'weather', 'usd', 'tether', 'btc', 'eth', 'coin', 'gold'][previous_index]
 
     def _format_price(self, price_str):
         """گرد کردن قیمت به 6 رقم معنی‌دار"""
         try:
-            price = int(price_str)
-            # گرد کردن به نزدیک‌ترین عدد با 6 رقم معنی‌دار
-            magnitude = 10 ** (len(str(price)) - 6)
-            if magnitude > 0:
-                price = round(price / magnitude) * magnitude
-            return convert_to_persian_numbers(f"{price:,}")
-        except (ValueError, TypeError):
+            # Handle both string and numeric types
+            if isinstance(price_str, str):
+                # Try to convert to float first (for decimal prices like 1.0)
+                try:
+                    price = float(price_str)
+                except ValueError:
+                    price = int(price_str)
+            else:
+                price = float(price_str)
+
+            # For cryptocurrency prices close to 1, show more decimal places
+            if price < 10:
+                return convert_to_persian_numbers(f"{price:.4f}")
+            else:
+                # گرد کردن به نزدیک‌ترین عدد با 6 رقم معنی‌دار
+                magnitude = 10 ** (len(str(int(price))) - 6)
+                if magnitude > 0:
+                    price = round(price / magnitude) * magnitude
+                return convert_to_persian_numbers(f"{price:,}")
+        except (ValueError, TypeError) as e:
+            print(f"Error formatting price '{price_str}': {e}")
             return "خطا"
 
     def _update_price_labels(self, prices):
@@ -582,10 +920,42 @@ class GlassWindow(QWidget):
         try:
             print("Available prices:", prices.keys())  # برای دیباگ
 
+            # Get USD to IRR exchange rate
+            usd_to_irr_rate = None
+            if "usd_to_irr" in prices:
+                try:
+                    usd_to_irr_rate = float(prices["usd_to_irr"])
+                    print(f"USD to IRR rate: {usd_to_irr_rate}")
+                except (ValueError, TypeError):
+                    print("Error parsing USD to IRR rate")
+
             # به‌روزرسانی قیمت‌ها
             for key in prices:
+                # برای دلار
+                if key.strip() == 'دلار':
+                    try:
+                        usd_price = int(float(prices[key]))
+                        self.usd_price_label.setText(convert_to_persian_numbers(f"{usd_price:,}"))
+                    except (ValueError, TypeError):
+                        self.usd_price_label.setText("خطا")
+                    print(f"Updated USD price: {prices[key]}")
+
+                # برای بیت‌کوین
+                elif key.strip() == 'بیت‌کوین':
+                    self.btc_price_label.setText(self._format_price(prices[key]))
+                    print(f"Updated Bitcoin price: {prices[key]}")
+
+                # برای اتریوم
+                elif key.strip() == 'اتریوم':
+                    try:
+                        eth_price = int(float(prices[key]))
+                        self.eth_price_label.setText(convert_to_persian_numbers(f"{eth_price:,}"))
+                    except (ValueError, TypeError):
+                        self.eth_price_label.setText("خطا")
+                    print(f"Updated Ethereum price: {prices[key]}")
+
                 # برای سکه امامی
-                if key.strip() == 'سکه امامی':
+                elif key.strip() == 'سکه امامی':
                     self.coin_price_label.setText(self._format_price(prices[key]))
                     print(f"Updated coin price (Emami): {prices[key]}")
 
@@ -594,10 +964,21 @@ class GlassWindow(QWidget):
                     self.gold_price_label.setText(self._format_price(prices[key]))
                     print(f"Updated gold price: {prices[key]} from key: {key}")
 
+                # برای تتر - نمایش قیمت به تومان بدون تبدیل به ریال
+                elif key.strip() == 'تتر':
+                    try:
+                        tether_price = int(float(prices[key]))
+                        self.tether_price_label.setText(convert_to_persian_numbers(f"{tether_price:,}"))
+                        print(f"Updated tether price: {tether_price} Toman")
+                    except (ValueError, TypeError) as e:
+                        print(f"Error formatting tether price: {e}")
+                        self.tether_price_label.setText("خطا")
+
         except (ValueError, TypeError) as e:
             print(f"Error updating labels: {str(e)}")
             self.gold_price_label.setText("خطای داده")
             self.coin_price_label.setText("خطای داده")
+            self.tether_price_label.setText("خطای داده")
 
     def _update_weather_display(self, temperature, icon_type):
         """به‌روزرسانی نمایش دما و آیکون"""
