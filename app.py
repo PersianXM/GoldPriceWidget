@@ -199,23 +199,21 @@ class WeatherUpdater(QThread):
 
     def __init__(self):
         super().__init__()
-        # Using OpenWeatherMap API for weather data
-        self.weather_api_url = "https://api.openweathermap.org/data/2.5/weather"
-        self.api_key = "YOUR_OPENWEATHERMAP_API_KEY"  # Replace with actual API key
-        self.city = "Mahshahr,IR"
+        # Using a free weather API service that doesn't require API key
+        self.city = "Mahshahr"
 
     def run(self):
         while True:
             try:
-                # Fetch weather data with condition
-                result = self._fetch_weather_data()
+                # Try primary weather service
+                result = self._fetch_weather_wttr()
                 if result:
                     temperature, icon_type = result
                     print(f"Fetched temperature: {temperature}, icon: {icon_type}")
                     self.weather_updated.emit(temperature, icon_type)
                 else:
-                    # If API fails, try alternative method
-                    print("API failed, trying alternative weather service...")
+                    # If primary fails, try alternative
+                    print("Primary weather API failed, trying alternative...")
                     alt_result = self._fetch_weather_alternative()
                     if alt_result:
                         temperature, icon_type = alt_result
@@ -230,92 +228,80 @@ class WeatherUpdater(QThread):
 
             self.msleep(600000)  # Update every 10 minutes
 
-    def _get_weather_icon(self, condition_id, is_night=False):
-        """Determine weather icon based on condition"""
-        # Weather condition codes from OpenWeatherMap
-        if is_night:
-            return "moon"
-        elif condition_id >= 200 and condition_id < 300:  # Thunderstorm
-            return "rain"
-        elif condition_id >= 300 and condition_id < 600:  # Rain
-            return "rain"
-        elif condition_id >= 600 and condition_id < 700:  # Snow
-            return "rain"  # Using rain icon for snow too
-        elif condition_id >= 700 and condition_id < 800:  # Atmosphere (fog, mist, etc.)
-            return "cloud"
-        elif condition_id == 800:  # Clear sky
-            return "sun" if not is_night else "moon"
-        elif condition_id > 800:  # Clouds
-            return "cloud"
-        else:
-            return "sun"
-
-    def _is_night_time(self, sunrise, sunset, current_time=None):
-        """Check if it's night time based on sunrise/sunset"""
-        if current_time is None:
-            current_time = datetime.now().timestamp()
-
-        return current_time < sunrise or current_time > sunset
-
-    def _fetch_weather_data(self):
-        """Fetch weather data from OpenWeatherMap API"""
+    def _fetch_weather_wttr(self):
+        """Primary weather service using wttr.in (reliable and no API key required)"""
         try:
-            params = {
-                'q': self.city,
-                'appid': self.api_key,
-                'units': 'metric'  # Celsius
+            # Get weather data in JSON format for better parsing
+            url = f"https://wttr.in/{self.city}?format=j1"
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
-            response = requests.get(self.weather_api_url, params=params, timeout=10)
+            
+            response = requests.get(url, headers=headers, timeout=15)
+            
             if response.status_code == 200:
                 data = response.json()
-                temp = data['main']['temp']
-                condition_id = data['weather'][0]['id']
+                
+                # Get current weather
+                current = data['current_condition'][0]
+                temp_c = current['temp_C']
+                weather_desc = current['weatherDesc'][0]['value'].lower()
+                
+                # Determine icon based on weather description
+                if any(keyword in weather_desc for keyword in ['rain', 'shower', 'drizzle', 'precipitation']):
+                    icon_type = "rain"
+                elif any(keyword in weather_desc for keyword in ['cloud', 'overcast', 'fog', 'mist']):
+                    icon_type = "cloud"
+                elif any(keyword in weather_desc for keyword in ['clear', 'sunny', 'bright']):
+                    # Check if it's night time (rough estimation)
+                    current_hour = datetime.now().hour
+                    icon_type = "moon" if current_hour < 6 or current_hour > 19 else "sun"
+                else:
+                    icon_type = "sun"
 
-                # Check if it's night time
-                sunrise = data['sys']['sunrise']
-                sunset = data['sys']['sunset']
-                is_night = self._is_night_time(sunrise, sunset)
-
-                icon_type = self._get_weather_icon(condition_id, is_night)
-                return f"{temp:.1f}°C", icon_type
-            else:
-                print(f"API Error: {response.status_code} - {response.text}")
+                return f"{temp_c}°C", icon_type
+                
         except Exception as e:
-            print(f"Weather API error: {str(e)}")
+            print(f"wttr.in API error: {str(e)}")
             return None
 
     def _fetch_weather_alternative(self):
-        """Alternative weather service using wttr.in (no API key required)"""
+        """Alternative weather service using simple wttr.in format"""
         try:
-            # Get temperature
-            temp_url = "https://wttr.in/Mahshahr?format=%t"
-            temp_response = requests.get(temp_url, timeout=10)
-
-            # Get weather condition
-            condition_url = "https://wttr.in/Mahshahr?format=%C"
-            condition_response = requests.get(condition_url, timeout=10)
+            # Get temperature and weather in simple format
+            temp_url = f"https://wttr.in/{self.city}?format=%t"
+            condition_url = f"https://wttr.in/{self.city}?format=%C"
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+            
+            temp_response = requests.get(temp_url, headers=headers, timeout=10)
+            condition_response = requests.get(condition_url, headers=headers, timeout=10)
 
             if temp_response.status_code == 200 and condition_response.status_code == 200:
                 temp = temp_response.text.strip()
                 condition = condition_response.text.strip().lower()
 
                 # Clean up temperature
-                temp = temp.replace('+', '')
-                temp = temp.replace('°C', '').replace('°c', '').replace('C', '').replace('c', '')
+                temp = temp.replace('+', '').replace('−', '-')
+                if '°' not in temp:
+                    temp += '°C'
 
                 # Determine icon based on condition text
-                if 'rain' in condition or 'shower' in condition or 'drizzle' in condition:
+                if any(keyword in condition for keyword in ['rain', 'shower', 'drizzle']):
                     icon_type = "rain"
-                elif 'cloud' in condition or 'overcast' in condition:
+                elif any(keyword in condition for keyword in ['cloud', 'overcast', 'fog']):
                     icon_type = "cloud"
-                elif 'clear' in condition or 'sunny' in condition:
-                    # Check if it's night time (rough estimation)
+                elif any(keyword in condition for keyword in ['clear', 'sunny']):
+                    # Check if it's night time
                     current_hour = datetime.now().hour
-                    icon_type = "moon" if current_hour < 6 or current_hour > 18 else "sun"
+                    icon_type = "moon" if current_hour < 6 or current_hour > 19 else "sun"
                 else:
                     icon_type = "sun"
 
-                return f"{temp}°C", icon_type
+                return temp, icon_type
+                
         except Exception as e:
             print(f"Alternative weather API error: {str(e)}")
             return None
@@ -637,7 +623,8 @@ class GlassWindow(QWidget):
 
         # --- مجموعه ویجت‌های system ---
         self.system_price_label = QLabel(self._get_system_name())
-        self.system_price_label.setFont(custom_font)
+        system_font = QFont(custom_font.family(), 12)
+        self.system_price_label.setFont(system_font)
         self.system_price_label.setStyleSheet("color: white; background-color: transparent;")
 
         self.system_icon_label = QLabel()
