@@ -194,6 +194,20 @@ def round_to_significant(num, n=6):
         return round(num / magnitude) * magnitude
     return num
 
+def check_internet_connection():
+    """بررسی وجود اتصال اینترنت"""
+    try:
+        # تلاش برای اتصال به سرور DNS گوگل
+        socket.create_connection(("8.8.8.8", 53), timeout=5)
+        return True
+    except OSError:
+        try:
+            # تلاش برای اتصال به سرور DNS کلودفلر
+            socket.create_connection(("1.1.1.1", 53), timeout=5)
+            return True
+        except OSError:
+            return False
+
 class WeatherUpdater(QThread):
     weather_updated = pyqtSignal(str, str)  # temperature, icon_type
 
@@ -205,6 +219,13 @@ class WeatherUpdater(QThread):
     def run(self):
         while True:
             try:
+                # بررسی اتصال اینترنت قبل از تلاش برای دریافت داده‌ها
+                if not check_internet_connection():
+                    print("No internet connection detected for weather")
+                    self.weather_updated.emit("عدم اتصال اینترنت", "sun")
+                    self.msleep(60000)  # چک کردن هر دقیقه در صورت عدم اتصال
+                    continue
+
                 # Try primary weather service
                 result = self._fetch_weather_wttr()
                 if result:
@@ -318,6 +339,22 @@ class PriceUpdater(QThread):
     def run(self):
         while True:
             try:
+                # بررسی اتصال اینترنت قبل از تلاش برای دریافت داده‌ها
+                if not check_internet_connection():
+                    print("No internet connection detected for prices")
+                    # ارسال پیام خطا برای همه قیمت‌ها
+                    error_prices = {
+                        "طلای ۱۸ عیار": "عدم اتصال اینترنت",
+                        "سکه امامی": "عدم اتصال اینترنت",
+                        "دلار": "عدم اتصال اینترنت",
+                        "تتر": "عدم اتصال اینترنت",
+                        "بیت‌کوین": "عدم اتصال اینترنت",
+                        "اتریوم": "عدم اتصال اینترنت"
+                    }
+                    self.price_updated.emit(error_prices)
+                    self.msleep(60000)  # چک کردن هر دقیقه در صورت عدم اتصال
+                    continue
+
                 # Fetch prices from both APIs
                 gold_prices = self._fetch_from_api()
                 crypto_prices = self._fetch_crypto_from_api()
@@ -332,9 +369,30 @@ class PriceUpdater(QThread):
                 if prices:
                     print(f"Fetched prices: {prices}")
                     self.price_updated.emit(prices)
+                else:
+                    # اگر هیچ داده‌ای دریافت نشد، پیام خطای عمومی ارسال شود
+                    error_prices = {
+                        "طلای ۱۸ عیار": "خطای دریافت داده",
+                        "سکه امامی": "خطای دریافت داده",
+                        "دلار": "خطای دریافت داده",
+                        "تتر": "خطای دریافت داده",
+                        "بیت‌کوین": "خطای دریافت داده",
+                        "اتریوم": "خطای دریافت داده"
+                    }
+                    self.price_updated.emit(error_prices)
 
             except Exception as e:
                 print(f"Error fetching prices: {str(e)}")
+                # ارسال پیام خطا در صورت بروز خطای غیرمنتظره
+                error_prices = {
+                    "طلای ۱۸ عیار": "خطای سیستم",
+                    "سکه امامی": "خطای سیستم",
+                    "دلار": "خطای سیستم",
+                    "تتر": "خطای سیستم",
+                    "بیت‌کوین": "خطای سیستم",
+                    "اتریوم": "خطای سیستم"
+                }
+                self.price_updated.emit(error_prices)
 
             self.msleep(15000)  # Update every 15 seconds
 
@@ -775,15 +833,15 @@ class GlassWindow(QWidget):
 
         # --- ساخت استک ویجت برای جابجایی بین حالت‌ها ---
         self.stack = QStackedWidget()
-        self.stack.addWidget(ip_container)         # ایندکس 0 - IP
-        self.stack.addWidget(system_container)     # ایندکس 1 - System Name
+        self.stack.addWidget(ip_container)         # ایندکس 0 - IP address
+        self.stack.addWidget(system_container)     # ایندکس 1 - System name
         self.stack.addWidget(weather_container)    # ایندکس 2 - Weather
-        self.stack.addWidget(usd_container)        # ایندکس 3 - USD به تومان
-        self.stack.addWidget(tether_container)     # ایندکس 4 - USDT_IRT به تومان
-        self.stack.addWidget(btc_container)        # ایندکس 5 - BTC
-        self.stack.addWidget(eth_container)        # ایندکس 6 - ETH
-        self.stack.addWidget(coin_container)       # ایندکس 7 - سکه امامی
-        self.stack.addWidget(gold_container)       # ایندکس 8 - طلای عیار 18
+        self.stack.addWidget(coin_container)       # ایندکس 3 - سکه امامی
+        self.stack.addWidget(gold_container)       # ایندکس 4 - طلای عیار 18
+        self.stack.addWidget(usd_container)        # ایندکس 5 - USD
+        self.stack.addWidget(tether_container)     # ایندکس 6 - تتر
+        self.stack.addWidget(btc_container)        # ایندکس 7 - بیت کوین
+        self.stack.addWidget(eth_container)        # ایندکس 8 - اتریوم
 
         # --- چیدمان اصلی ---
         content_layout = QHBoxLayout(container_widget)
@@ -868,19 +926,22 @@ class GlassWindow(QWidget):
                 current_index = self.stack.currentIndex()
                 next_index = (current_index + 1) % 9
                 self.stack.setCurrentIndex(next_index)
-                self.display_mode = ['ip', 'system', 'weather', 'usd', 'tether', 'btc', 'eth', 'coin', 'gold'][next_index]
+                self.display_mode = ['ip', 'system', 'weather', 'coin', 'gold', 'usd', 'tether', 'btc', 'eth'][next_index]
             else:
                 # کلیک بر روی سمت چپ (آیکون): نمایش اطلاعات قبلی (Previous)
                 current_index = self.stack.currentIndex()
                 previous_index = (current_index - 1) % 9
                 self.stack.setCurrentIndex(previous_index)
-                self.display_mode = ['ip', 'system', 'weather', 'usd', 'tether', 'btc', 'eth', 'coin', 'gold'][previous_index]
+                self.display_mode = ['ip', 'system', 'weather', 'coin', 'gold', 'usd', 'tether', 'btc', 'eth'][previous_index]
 
     def _format_price(self, price_str):
         """گرد کردن قیمت به 6 رقم معنی‌دار"""
         try:
-            # Handle both string and numeric types
+            # بررسی پیام‌های خطا و برگرداندن آنها بدون تغییر
             if isinstance(price_str, str):
+                if "عدم اتصال" in price_str or "خطا" in price_str:
+                    return price_str
+                
                 # Try to convert to float first (for decimal prices like 1.0)
                 try:
                     price = float(price_str)
@@ -918,48 +979,59 @@ class GlassWindow(QWidget):
 
             # به‌روزرسانی قیمت‌ها
             for key in prices:
+                price_value = prices[key]
+                
                 # برای دلار
                 if key.strip() == 'دلار':
-                    try:
-                        usd_price = int(float(prices[key]))
-                        self.usd_price_label.setText(convert_to_persian_numbers(f"{usd_price:,}"))
-                    except (ValueError, TypeError):
-                        self.usd_price_label.setText("خطا")
-                    print(f"Updated USD price: {prices[key]}")
+                    if isinstance(price_value, str) and ("عدم اتصال" in price_value or "خطا" in price_value):
+                        self.usd_price_label.setText(price_value)
+                    else:
+                        try:
+                            usd_price = int(float(price_value))
+                            self.usd_price_label.setText(convert_to_persian_numbers(f"{usd_price:,}"))
+                        except (ValueError, TypeError):
+                            self.usd_price_label.setText("خطا")
+                    print(f"Updated USD price: {price_value}")
 
                 # برای بیت‌کوین
                 elif key.strip() == 'بیت‌کوین':
-                    self.btc_price_label.setText(self._format_price(prices[key]))
-                    print(f"Updated Bitcoin price: {prices[key]}")
+                    self.btc_price_label.setText(self._format_price(price_value))
+                    print(f"Updated Bitcoin price: {price_value}")
 
                 # برای اتریوم
                 elif key.strip() == 'اتریوم':
-                    try:
-                        eth_price = int(float(prices[key]))
-                        self.eth_price_label.setText(convert_to_persian_numbers(f"{eth_price:,}"))
-                    except (ValueError, TypeError):
-                        self.eth_price_label.setText("خطا")
-                    print(f"Updated Ethereum price: {prices[key]}")
+                    if isinstance(price_value, str) and ("عدم اتصال" in price_value or "خطا" in price_value):
+                        self.eth_price_label.setText(price_value)
+                    else:
+                        try:
+                            eth_price = int(float(price_value))
+                            self.eth_price_label.setText(convert_to_persian_numbers(f"{eth_price:,}"))
+                        except (ValueError, TypeError):
+                            self.eth_price_label.setText("خطا")
+                    print(f"Updated Ethereum price: {price_value}")
 
                 # برای سکه امامی
                 elif key.strip() == 'سکه امامی':
-                    self.coin_price_label.setText(self._format_price(prices[key]))
-                    print(f"Updated coin price (Emami): {prices[key]}")
+                    self.coin_price_label.setText(self._format_price(price_value))
+                    print(f"Updated coin price (Emami): {price_value}")
 
                 # برای طلای 18 عیار - بررسی همه حالت‌های ممکن
                 elif any(gold_type in key.strip() for gold_type in ['طلای ۱۸ عیار', 'طلای ۱۸عیار', 'طلا ۱۸ عیار']):
-                    self.gold_price_label.setText(self._format_price(prices[key]))
-                    print(f"Updated gold price: {prices[key]} from key: {key}")
+                    self.gold_price_label.setText(self._format_price(price_value))
+                    print(f"Updated gold price: {price_value} from key: {key}")
 
                 # برای تتر - نمایش قیمت به تومان بدون تبدیل به ریال
                 elif key.strip() == 'تتر':
-                    try:
-                        tether_price = int(float(prices[key]))
-                        self.tether_price_label.setText(convert_to_persian_numbers(f"{tether_price:,}"))
-                        print(f"Updated tether price: {tether_price} Toman")
-                    except (ValueError, TypeError) as e:
-                        print(f"Error formatting tether price: {e}")
-                        self.tether_price_label.setText("خطا")
+                    if isinstance(price_value, str) and ("عدم اتصال" in price_value or "خطا" in price_value):
+                        self.tether_price_label.setText(price_value)
+                    else:
+                        try:
+                            tether_price = int(float(price_value))
+                            self.tether_price_label.setText(convert_to_persian_numbers(f"{tether_price:,}"))
+                            print(f"Updated tether price: {tether_price} Toman")
+                        except (ValueError, TypeError) as e:
+                            print(f"Error formatting tether price: {e}")
+                            self.tether_price_label.setText("خطا")
 
         except (ValueError, TypeError) as e:
             print(f"Error updating labels: {str(e)}")
@@ -971,13 +1043,14 @@ class GlassWindow(QWidget):
         """به‌روزرسانی نمایش دما و آیکون"""
         try:
             # Update temperature label
-            if temperature and temperature != "خطای اتصال":
+            if temperature and temperature not in ["خطای اتصال", "عدم اتصال اینترنت"]:
                 # تبدیل اعداد انگلیسی به فارسی
                 persian_temp = convert_to_persian_numbers(temperature)
                 self.weather_label.setText(persian_temp)
                 print(f"Updated weather temperature: {persian_temp}")
             else:
-                self.weather_label.setText("خطای داده")
+                # نمایش پیام خطا
+                self.weather_label.setText(temperature if temperature else "خطای داده")
 
             # Update weather icon based on condition
             if icon_type == "sun":
