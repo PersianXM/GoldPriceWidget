@@ -222,7 +222,7 @@ class WeatherUpdater(QThread):
                 # بررسی اتصال اینترنت قبل از تلاش برای دریافت داده‌ها
                 if not check_internet_connection():
                     print("No internet connection detected for weather")
-                    self.weather_updated.emit("عدم اتصال اینترنت", "sun")
+                    self.weather_updated.emit("No Internet", "sun")
                     self.msleep(60000)  # چک کردن هر دقیقه در صورت عدم اتصال
                     continue
 
@@ -242,10 +242,10 @@ class WeatherUpdater(QThread):
                         self.weather_updated.emit(temperature, icon_type)
                     else:
                         print("All weather services failed")
-                        self.weather_updated.emit("خطای اتصال", "sun")
+                        self.weather_updated.emit("Connection Error", "sun")
             except Exception as e:
                 print(f"Error fetching weather: {str(e)}")
-                self.weather_updated.emit("خطای اتصال", "sun")
+                self.weather_updated.emit("Connection Error", "sun")
 
             self.msleep(600000)  # Update every 10 minutes
 
@@ -344,12 +344,12 @@ class PriceUpdater(QThread):
                     print("No internet connection detected for prices")
                     # ارسال پیام خطا برای همه قیمت‌ها
                     error_prices = {
-                        "طلای ۱۸ عیار": "عدم اتصال اینترنت",
-                        "سکه امامی": "عدم اتصال اینترنت",
-                        "دلار": "عدم اتصال اینترنت",
-                        "تتر": "عدم اتصال اینترنت",
-                        "بیت‌کوین": "عدم اتصال اینترنت",
-                        "اتریوم": "عدم اتصال اینترنت"
+                        "طلای ۱۸ عیار": "No Internet",
+                        "سکه امامی": "No Internet",
+                        "دلار": "No Internet",
+                        "تتر": "No Internet",
+                        "بیت‌کوین": "No Internet",
+                        "اتریوم": "No Internet"
                     }
                     self.price_updated.emit(error_prices)
                     self.msleep(60000)  # چک کردن هر دقیقه در صورت عدم اتصال
@@ -372,12 +372,12 @@ class PriceUpdater(QThread):
                 else:
                     # اگر هیچ داده‌ای دریافت نشد، پیام خطای عمومی ارسال شود
                     error_prices = {
-                        "طلای ۱۸ عیار": "خطای دریافت داده",
-                        "سکه امامی": "خطای دریافت داده",
-                        "دلار": "خطای دریافت داده",
-                        "تتر": "خطای دریافت داده",
-                        "بیت‌کوین": "خطای دریافت داده",
-                        "اتریوم": "خطای دریافت داده"
+                        "طلای ۱۸ عیار": "Connection Error",
+                        "سکه امامی": "Connection Error",
+                        "دلار": "Connection Error",
+                        "تتر": "Connection Error",
+                        "بیت‌کوین": "Connection Error",
+                        "اتریوم": "Connection Error"
                     }
                     self.price_updated.emit(error_prices)
 
@@ -385,12 +385,12 @@ class PriceUpdater(QThread):
                 print(f"Error fetching prices: {str(e)}")
                 # ارسال پیام خطا در صورت بروز خطای غیرمنتظره
                 error_prices = {
-                    "طلای ۱۸ عیار": "خطای سیستم",
-                    "سکه امامی": "خطای سیستم",
-                    "دلار": "خطای سیستم",
-                    "تتر": "خطای سیستم",
-                    "بیت‌کوین": "خطای سیستم",
-                    "اتریوم": "خطای سیستم"
+                    "طلای ۱۸ عیار": "System Error",
+                    "سکه امامی": "System Error",
+                    "دلار": "System Error",
+                    "تتر": "System Error",
+                    "بیت‌کوین": "System Error",
+                    "اتریوم": "System Error"
                 }
                 self.price_updated.emit(error_prices)
 
@@ -653,12 +653,16 @@ class GlassWindow(QWidget):
         container_widget.setFixedHeight(50)
 
         # --- فونت ---
+        # استفاده از فونت‌های رسمی ویندوز
         try:
-            font_path = os.path.join(os.path.dirname(__file__), 'Vazirmatn-Regular.ttf')
-            font_id = QFontDatabase.addApplicationFont(font_path)
-            font_family = QFontDatabase.applicationFontFamilies(font_id)[0]
-            custom_font = QFont(font_family, 14)
-        except (IndexError, FileNotFoundError):
+            # اولویت اول: Segoe UI (فونت مدرن ویندوز)
+            custom_font = QFont("Segoe UI", 14)
+            # بررسی در دسترس بودن فونت
+            if not QFontDatabase.families().__contains__("Segoe UI"):
+                # فونت جایگزین: Tahoma (برای ویندوزهای قدیمی‌تر)
+                custom_font = QFont("Tahoma", 14)
+        except Exception:
+            # فونت پیش‌فرض در صورت بروز مشکل
             custom_font = QFont("Arial", 14)
 
         # --- مجموعه ویجت‌های طلا ---
@@ -939,7 +943,7 @@ class GlassWindow(QWidget):
         try:
             # بررسی پیام‌های خطا و برگرداندن آنها بدون تغییر
             if isinstance(price_str, str):
-                if "عدم اتصال" in price_str or "خطا" in price_str:
+                if "No Internet" in price_str or "Error" in price_str:
                     return price_str
                 
                 # Try to convert to float first (for decimal prices like 1.0)
@@ -961,7 +965,7 @@ class GlassWindow(QWidget):
                 return convert_to_persian_numbers(f"{price:,}")
         except (ValueError, TypeError) as e:
             print(f"Error formatting price '{price_str}': {e}")
-            return "خطا"
+            return "Error"
 
     def _update_price_labels(self, prices):
         """به‌روزرسانی برچسب‌های قیمت"""
@@ -983,14 +987,14 @@ class GlassWindow(QWidget):
                 
                 # برای دلار
                 if key.strip() == 'دلار':
-                    if isinstance(price_value, str) and ("عدم اتصال" in price_value or "خطا" in price_value):
+                    if isinstance(price_value, str) and ("No Internet" in price_value or "Error" in price_value):
                         self.usd_price_label.setText(price_value)
                     else:
                         try:
                             usd_price = int(float(price_value))
                             self.usd_price_label.setText(convert_to_persian_numbers(f"{usd_price:,}"))
                         except (ValueError, TypeError):
-                            self.usd_price_label.setText("خطا")
+                            self.usd_price_label.setText("Error")
                     print(f"Updated USD price: {price_value}")
 
                 # برای بیت‌کوین
@@ -1000,14 +1004,14 @@ class GlassWindow(QWidget):
 
                 # برای اتریوم
                 elif key.strip() == 'اتریوم':
-                    if isinstance(price_value, str) and ("عدم اتصال" in price_value or "خطا" in price_value):
+                    if isinstance(price_value, str) and ("No Internet" in price_value or "Error" in price_value):
                         self.eth_price_label.setText(price_value)
                     else:
                         try:
                             eth_price = int(float(price_value))
                             self.eth_price_label.setText(convert_to_persian_numbers(f"{eth_price:,}"))
                         except (ValueError, TypeError):
-                            self.eth_price_label.setText("خطا")
+                            self.eth_price_label.setText("Error")
                     print(f"Updated Ethereum price: {price_value}")
 
                 # برای سکه امامی
@@ -1022,7 +1026,7 @@ class GlassWindow(QWidget):
 
                 # برای تتر - نمایش قیمت به تومان بدون تبدیل به ریال
                 elif key.strip() == 'تتر':
-                    if isinstance(price_value, str) and ("عدم اتصال" in price_value or "خطا" in price_value):
+                    if isinstance(price_value, str) and ("No Internet" in price_value or "Error" in price_value):
                         self.tether_price_label.setText(price_value)
                     else:
                         try:
@@ -1031,26 +1035,26 @@ class GlassWindow(QWidget):
                             print(f"Updated tether price: {tether_price} Toman")
                         except (ValueError, TypeError) as e:
                             print(f"Error formatting tether price: {e}")
-                            self.tether_price_label.setText("خطا")
+                            self.tether_price_label.setText("Error")
 
         except (ValueError, TypeError) as e:
             print(f"Error updating labels: {str(e)}")
-            self.gold_price_label.setText("خطای داده")
-            self.coin_price_label.setText("خطای داده")
-            self.tether_price_label.setText("خطای داده")
+            self.gold_price_label.setText("Data Error")
+            self.coin_price_label.setText("Data Error")
+            self.tether_price_label.setText("Data Error")
 
     def _update_weather_display(self, temperature, icon_type):
         """به‌روزرسانی نمایش دما و آیکون"""
         try:
             # Update temperature label
-            if temperature and temperature not in ["خطای اتصال", "عدم اتصال اینترنت"]:
+            if temperature and temperature not in ["Connection Error", "No Internet"]:
                 # تبدیل اعداد انگلیسی به فارسی
                 persian_temp = convert_to_persian_numbers(temperature)
                 self.weather_label.setText(persian_temp)
                 print(f"Updated weather temperature: {persian_temp}")
             else:
                 # نمایش پیام خطا
-                self.weather_label.setText(temperature if temperature else "خطای داده")
+                self.weather_label.setText(temperature if temperature else "Data Error")
 
             # Update weather icon based on condition
             if icon_type == "sun":
@@ -1069,7 +1073,7 @@ class GlassWindow(QWidget):
 
         except Exception as e:
             print(f"Error updating weather display: {str(e)}")
-            self.weather_label.setText("خطای داده")
+            self.weather_label.setText("Data Error")
             self.weather_icon_label.setPixmap(self._render_svg_to_pixmap(SUN_ICON_SVG))
         
 if __name__ == '__main__':
