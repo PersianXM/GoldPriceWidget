@@ -1,17 +1,47 @@
 import sys
 import re
 import os
+import tempfile
 import socket
 import json
 import asyncio
 import websockets
 import requests
 from datetime import datetime
+from urllib.parse import quote as urlquote
 from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QHBoxLayout, QGraphicsDropShadowEffect, QStackedWidget
-from PyQt6.QtGui import QFont, QFontDatabase, QPixmap, QColor, QPainter
+from PyQt6.QtGui import QFont, QFontDatabase, QPixmap, QColor, QPainter, QMouseEvent
+from typing import Optional
 from PyQt6.QtCore import Qt, QTimer, QSize, QByteArray
 from PyQt6.QtSvg import QSvgRenderer
+
+# Helper to locate data files in both dev and PyInstaller one-file mode
+def resource_path(relative_path: str) -> str:
+    """Return absolute path to resource, works for dev and PyInstaller executables."""
+    base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base_path, relative_path)
+
+# Lightweight debug logger (writes to temp folder so it's available in exe mode)
+_DEBUG_LOG_PATH = os.path.join(tempfile.gettempdir(), "GoldPriceWidget.log")
+def _log(msg: str):
+    try:
+        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(f"{datetime.now().isoformat()} | {msg}\n")
+    except Exception:
+        pass
+
+# Install a global exception hook to capture any uncaught exceptions in the exe
+def _excepthook(exc_type, exc_value, exc_traceback):
+    try:
+        import traceback
+        tb = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+        _log(f"UNCAUGHT EXCEPTION:\n{tb}")
+    finally:
+        # Fallback to default handler to avoid silent failures
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+
+sys.excepthook = _excepthook
 
 # --- داده‌های SVG برای آیکون‌ها ---
 GOLD_ICON_SVG = """
@@ -214,7 +244,7 @@ class WeatherUpdater(QThread):
     def __init__(self):
         super().__init__()
         # Using a free weather API service that doesn't require API key
-        self.city = "Mahshahr"
+        self.city = "Bandar e Mahshahr"
 
     def run(self):
         while True:
@@ -253,7 +283,8 @@ class WeatherUpdater(QThread):
         """Primary weather service using wttr.in (reliable and no API key required)"""
         try:
             # Get weather data in JSON format for better parsing
-            url = f"https://wttr.in/{self.city}?format=j1"
+            encoded_city = urlquote(self.city)
+            url = f"https://wttr.in/{encoded_city}?format=j1"
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
@@ -280,6 +311,10 @@ class WeatherUpdater(QThread):
                 else:
                     icon_type = "sun"
 
+                try:
+                    _log(f"Weather fetched: city={self.city}, temp_c={temp_c}, icon={icon_type}")
+                except Exception:
+                    pass
                 return f"{temp_c}°C", icon_type
                 
         except Exception as e:
@@ -290,8 +325,9 @@ class WeatherUpdater(QThread):
         """Alternative weather service using simple wttr.in format"""
         try:
             # Get temperature and weather in simple format
-            temp_url = f"https://wttr.in/{self.city}?format=%t"
-            condition_url = f"https://wttr.in/{self.city}?format=%C"
+            encoded_city = urlquote(self.city)
+            temp_url = f"https://wttr.in/{encoded_city}?format=%t"
+            condition_url = f"https://wttr.in/{encoded_city}?format=%C"
             
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -321,6 +357,10 @@ class WeatherUpdater(QThread):
                 else:
                     icon_type = "sun"
 
+                try:
+                    _log(f"Weather fetched alt: city={self.city}, temp={temp}, icon={icon_type}")
+                except Exception:
+                    pass
                 return temp, icon_type
                 
         except Exception as e:
@@ -653,20 +693,30 @@ class GlassWindow(QWidget):
         container_widget.setFixedHeight(50)
 
         # --- فونت ---
-        # استفاده از فونت‌های رسمی ویندوز
+        # استفاده از فونت‌های پیش‌فرض ویندوز (Segoe UI/Tahoma/Arial)
+        # Prefer Segoe UI, then Tahoma, then Arial
         try:
-            # اولویت اول: Segoe UI (فونت مدرن ویندوز)
-            custom_font = QFont("Segoe UI", 14)
-            # بررسی در دسترس بودن فونت
-            if not QFontDatabase.families().__contains__("Segoe UI"):
-                # فونت جایگزین: Tahoma (برای ویندوزهای قدیمی‌تر)
-                custom_font = QFont("Tahoma", 14)
+            has_segoe = bool(getattr(QFontDatabase, 'hasFamily', lambda *_: False)("Segoe UI"))
+            has_tahoma = bool(getattr(QFontDatabase, 'hasFamily', lambda *_: False)("Tahoma"))
+            has_arial = bool(getattr(QFontDatabase, 'hasFamily', lambda *_: False)("Arial"))
         except Exception:
-            # فونت پیش‌فرض در صورت بروز مشکل
+            has_segoe = has_tahoma = has_arial = False
+        if has_segoe:
+            custom_font = QFont("Segoe UI", 14)
+        elif has_tahoma:
+            custom_font = QFont("Tahoma", 14)
+        else:
             custom_font = QFont("Arial", 14)
+        _log(f"Using Windows default font: {custom_font.family()}")
+
+        # اعمال فونت به‌صورت سراسری برای کل برنامه تا از هرگونه عدم‌تطابق جلوگیری شود
+        try:
+            QApplication.setFont(custom_font)
+        except Exception:
+            pass
 
         # --- مجموعه ویجت‌های طلا ---
-        self.gold_price_label = QLabel("۲,۵۰۰,۰۰۰")
+        self.gold_price_label = QLabel("2,500,000")
         self.gold_price_label.setFont(custom_font)
         self.gold_price_label.setStyleSheet("color: white; background-color: transparent;")
 
@@ -675,7 +725,7 @@ class GlassWindow(QWidget):
         self.gold_icon_label.setStyleSheet("background-color: transparent;")
 
         # --- مجموعه ویجت‌های سکه ---
-        self.coin_price_label = QLabel("۱۴,۸۰۰,۰۰۰")
+        self.coin_price_label = QLabel("14,800,000")
         self.coin_price_label.setFont(custom_font)
         self.coin_price_label.setStyleSheet("color: white; background-color: transparent;")
 
@@ -703,7 +753,7 @@ class GlassWindow(QWidget):
         self.ip_icon_label.setStyleSheet("background-color: transparent;")
 
         # --- مجموعه ویجت‌های Weather ---
-        self.weather_label = QLabel("۴۴°C")
+        self.weather_label = QLabel("44°C")
         self.weather_label.setFont(custom_font)
         self.weather_label.setStyleSheet("color: white; background-color: transparent;")
 
@@ -712,7 +762,7 @@ class GlassWindow(QWidget):
         self.weather_icon_label.setStyleSheet("background-color: transparent;")
 
         # --- مجموعه ویجت‌های Tether ---
-        self.tether_price_label = QLabel("۵۰,۰۰۰")
+        self.tether_price_label = QLabel("50,000")
         self.tether_price_label.setFont(custom_font)
         self.tether_price_label.setStyleSheet("color: white; background-color: transparent;")
 
@@ -721,7 +771,7 @@ class GlassWindow(QWidget):
         self.tether_icon_label.setStyleSheet("background-color: transparent;")
 
         # --- مجموعه ویجت‌های USD ---
-        self.usd_price_label = QLabel("۴۹,۵۰۰")
+        self.usd_price_label = QLabel("49,500")
         self.usd_price_label.setFont(custom_font)
         self.usd_price_label.setStyleSheet("color: white; background-color: transparent;")
 
@@ -730,7 +780,7 @@ class GlassWindow(QWidget):
         self.usd_icon_label.setStyleSheet("background-color: transparent;")
 
         # --- مجموعه ویجت‌های Bitcoin ---
-        self.btc_price_label = QLabel("۱,۲۵۰,۰۰۰")
+        self.btc_price_label = QLabel("1,250,000")
         self.btc_price_label.setFont(custom_font)
         self.btc_price_label.setStyleSheet("color: white; background-color: transparent;")
 
@@ -739,7 +789,7 @@ class GlassWindow(QWidget):
         self.btc_icon_label.setStyleSheet("background-color: transparent;")
 
         # --- مجموعه ویجت‌های Ethereum ---
-        self.eth_price_label = QLabel("۲۵۰,۰۰۰")
+        self.eth_price_label = QLabel("250,000")
         self.eth_price_label.setFont(custom_font)
         self.eth_price_label.setStyleSheet("color: white; background-color: transparent;")
 
@@ -844,8 +894,8 @@ class GlassWindow(QWidget):
         self.stack.addWidget(gold_container)       # ایندکس 4 - طلای عیار 18
         self.stack.addWidget(usd_container)        # ایندکس 5 - USD
         self.stack.addWidget(tether_container)     # ایندکس 6 - تتر
-        self.stack.addWidget(btc_container)        # ایندکس 7 - بیت کوین
-        self.stack.addWidget(eth_container)        # ایندکس 8 - اتریوم
+        # self.stack.addWidget(btc_container)        # مخفی موقت: بیت کوین
+        # self.stack.addWidget(eth_container)        # مخفی موقت: اتریوم
 
         # --- چیدمان اصلی ---
         content_layout = QHBoxLayout(container_widget)
@@ -884,21 +934,33 @@ class GlassWindow(QWidget):
         self.move_to_top_right()
 
     def _render_svg_to_pixmap(self, svg_data, size=QSize(22, 22)):
-        renderer = QSvgRenderer(QByteArray(svg_data))
-        pixmap = QPixmap(size)
-        pixmap.fill(Qt.GlobalColor.transparent)
-        painter = QPainter(pixmap)
-        renderer.render(painter)
-        painter.end()
-        return pixmap
+        try:
+            renderer = QSvgRenderer(QByteArray(svg_data))
+            pixmap = QPixmap(size)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            renderer.render(painter)
+            painter.end()
+            return pixmap
+        except Exception as e:
+            _log(f"SVG render error: {e}")
+            # Return transparent pixmap as safe fallback
+            fallback = QPixmap(size)
+            fallback.fill(Qt.GlobalColor.transparent)
+            return fallback
 
     def move_to_top_right(self):
         QTimer.singleShot(100, self._do_move)
 
     def _do_move(self):
         self.adjustSize() 
-        screen_geometry = QApplication.primaryScreen().availableGeometry()
-        self.move(screen_geometry.width() - self.width() - 20, 20)
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            screen_geometry = screen.availableGeometry()
+            self.move(screen_geometry.width() - self.width() - 20, 20)
+        else:
+            # Fallback position if screen is not available yet
+            self.move(20, 20)
 
     def _get_system_name(self):
         """دریافت نام سیستم"""
@@ -916,27 +978,29 @@ class GlassWindow(QWidget):
         except:
             return "Unknown IP"
 
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.RightButton:
+    def mousePressEvent(self, a0: Optional[QMouseEvent]):
+        if a0 is None:
+            return
+        if a0.button() == Qt.MouseButton.RightButton:
             # کلیک راست: بستن برنامه
             self.close()
-        elif event.button() == Qt.MouseButton.LeftButton:
+        elif a0.button() == Qt.MouseButton.LeftButton:
             # تعیین محل کلیک بر اساس مختصات X
-            click_x = event.position().x()
+            click_x = a0.position().x()
             widget_width = self.width()
 
             if click_x > widget_width / 2:
                 # کلیک بر روی سمت راست (قیمت): نمایش اطلاعات بعدی (Next)
                 current_index = self.stack.currentIndex()
-                next_index = (current_index + 1) % 9
+                next_index = (current_index + 1) % 7
                 self.stack.setCurrentIndex(next_index)
-                self.display_mode = ['ip', 'system', 'weather', 'coin', 'gold', 'usd', 'tether', 'btc', 'eth'][next_index]
+                self.display_mode = ['ip', 'system', 'weather', 'coin', 'gold', 'usd', 'tether'][next_index]
             else:
                 # کلیک بر روی سمت چپ (آیکون): نمایش اطلاعات قبلی (Previous)
                 current_index = self.stack.currentIndex()
-                previous_index = (current_index - 1) % 9
+                previous_index = (current_index - 1) % 7
                 self.stack.setCurrentIndex(previous_index)
-                self.display_mode = ['ip', 'system', 'weather', 'coin', 'gold', 'usd', 'tether', 'btc', 'eth'][previous_index]
+                self.display_mode = ['ip', 'system', 'weather', 'coin', 'gold', 'usd', 'tether'][previous_index]
 
     def _format_price(self, price_str):
         """گرد کردن قیمت به 6 رقم معنی‌دار"""
@@ -956,13 +1020,13 @@ class GlassWindow(QWidget):
 
             # For cryptocurrency prices close to 1, show more decimal places
             if price < 10:
-                return convert_to_persian_numbers(f"{price:.4f}")
+                return f"{price:.4f}"
             else:
                 # گرد کردن به نزدیک‌ترین عدد با 6 رقم معنی‌دار
                 magnitude = 10 ** (len(str(int(price))) - 6)
                 if magnitude > 0:
                     price = round(price / magnitude) * magnitude
-                return convert_to_persian_numbers(f"{price:,}")
+                return f"{price:,}"
         except (ValueError, TypeError) as e:
             print(f"Error formatting price '{price_str}': {e}")
             return "Error"
@@ -992,27 +1056,15 @@ class GlassWindow(QWidget):
                     else:
                         try:
                             usd_price = int(float(price_value))
-                            self.usd_price_label.setText(convert_to_persian_numbers(f"{usd_price:,}"))
+                            self.usd_price_label.setText(f"{usd_price:,}")
                         except (ValueError, TypeError):
                             self.usd_price_label.setText("Error")
                     print(f"Updated USD price: {price_value}")
 
-                # برای بیت‌کوین
-                elif key.strip() == 'بیت‌کوین':
-                    self.btc_price_label.setText(self._format_price(price_value))
-                    print(f"Updated Bitcoin price: {price_value}")
-
-                # برای اتریوم
-                elif key.strip() == 'اتریوم':
-                    if isinstance(price_value, str) and ("No Internet" in price_value or "Error" in price_value):
-                        self.eth_price_label.setText(price_value)
-                    else:
-                        try:
-                            eth_price = int(float(price_value))
-                            self.eth_price_label.setText(convert_to_persian_numbers(f"{eth_price:,}"))
-                        except (ValueError, TypeError):
-                            self.eth_price_label.setText("Error")
-                    print(f"Updated Ethereum price: {price_value}")
+                # بیت‌کوین و اتریوم فعلاً غیرفعال هستند؛ از به‌روزرسانی آنها صرف‌نظر می‌شود
+                elif key.strip() in ('بیت‌کوین', 'اتریوم'):
+                    # Skip updates while hidden
+                    continue
 
                 # برای سکه امامی
                 elif key.strip() == 'سکه امامی':
@@ -1031,7 +1083,7 @@ class GlassWindow(QWidget):
                     else:
                         try:
                             tether_price = int(float(price_value))
-                            self.tether_price_label.setText(convert_to_persian_numbers(f"{tether_price:,}"))
+                            self.tether_price_label.setText(f"{tether_price:,}")
                             print(f"Updated tether price: {tether_price} Toman")
                         except (ValueError, TypeError) as e:
                             print(f"Error formatting tether price: {e}")
@@ -1048,10 +1100,8 @@ class GlassWindow(QWidget):
         try:
             # Update temperature label
             if temperature and temperature not in ["Connection Error", "No Internet"]:
-                # تبدیل اعداد انگلیسی به فارسی
-                persian_temp = convert_to_persian_numbers(temperature)
-                self.weather_label.setText(persian_temp)
-                print(f"Updated weather temperature: {persian_temp}")
+                self.weather_label.setText(temperature)
+                print(f"Updated weather temperature: {temperature}")
             else:
                 # نمایش پیام خطا
                 self.weather_label.setText(temperature if temperature else "Data Error")
